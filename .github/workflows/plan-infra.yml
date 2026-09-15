@@ -1,0 +1,67 @@
+name: Plan Infra (Terraform)
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      terraform_env_dir:
+        description: "Terraform environment directory"
+        required: true
+        default: "infra/terraform/environments/dev"
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      TF_ENV_DIR: ${{ github.event.inputs.terraform_env_dir || 'infra/terraform/environments/dev' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+
+      - name: Terraform init
+        run: terraform -chdir=$TF_ENV_DIR init -input=false
+
+      - name: Terraform format check
+        run: terraform -chdir=$TF_ENV_DIR fmt -check
+
+      - name: Terraform validate
+        run: terraform -chdir=$TF_ENV_DIR validate
+
+      - name: Run tfsec scan
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: ${{ env.TF_ENV_DIR }}
+
+      - name: Run Checkov scan
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: ${{ env.TF_ENV_DIR }}
+          quiet: true
+
+      - name: Terraform plan
+        env:
+          TF_VAR_lambda_function_name: ${{ secrets.AUTH_LAMBDA_FUNCTION_NAME }}
+          TF_VAR_lambda_invoke_arn: ${{ secrets.AUTH_LAMBDA_INVOKE_ARN }}
+          TF_VAR_app_public_url: ${{ secrets.APP_PUBLIC_URL }}
+        run: terraform -chdir=$TF_ENV_DIR plan -input=false -out=tfplan
+
+      - name: Upload Terraform plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan
+          path: |
+            ${{ env.TF_ENV_DIR }}/tfplan

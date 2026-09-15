@@ -1,0 +1,27 @@
+# Valores mínimos para o chart prometheus-community/kube-prometheus-stack,
+# habilitando o Prometheus a descobrir ServiceMonitors em qualquer namespace
+# (não só o do próprio release) e o Grafana a carregar dashboards via
+# ConfigMap com a label grafana_dashboard: "1" (sidecar).
+#
+# Uso: ver scripts/install_observability_stack.sh
+
+prometheus:
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+
+grafana:
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: ALL
+      label: grafana_dashboard
+      labelValue: "1"
+  # Trocar antes de ir para hml/prod - nunca usar a senha default em cluster real.
+  adminPassword: troque-esta-senha
+
+alertmanager:
+  enabled: true

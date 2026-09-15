@@ -1,0 +1,22 @@
+# Requer o CRD ServiceMonitor do Prometheus Operator (instalado junto com o
+# kube-prometheus-stack, ver scripts/install_observability_stack.sh). Seleciona
+# o Service oficina-app (k8s/base/app-service.yaml, label app: oficina-app,
+# porta nomeada "http") e faz scrape de /actuator/prometheus.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: oficina-app
+  namespace: oficina
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - oficina
+  selector:
+    matchLabels:
+      app: oficina-app
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s

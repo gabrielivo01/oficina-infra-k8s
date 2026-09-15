@@ -1,0 +1,120 @@
+# ConfigMap com um dashboard Grafana pronto, descoberto automaticamente pelo
+# sidecar do kube-prometheus-stack (grafana.sidecar.dashboards, ver
+# values-kube-prometheus-stack.yaml) por causa da label grafana_dashboard: "1".
+# Cobre os itens pedidos no desafio: volume diário de OS, tempo médio de
+# execução por status, erros/falhas de integração, latência das APIs,
+# consumo de CPU/memória do pod e healthcheck/uptime.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oficina-grafana-dashboard
+  namespace: oficina
+  labels:
+    grafana_dashboard: "1"
+data:
+  oficina-overview.json: |
+    {
+      "uid": "oficina-overview",
+      "title": "Oficina - Visao Geral",
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": { "from": "now-24h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Ordens de servico abertas (ultimas 24h)",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+          "targets": [
+            {
+              "expr": "sum(increase(oficina_ordens_servico_abertas_total[24h]))",
+              "legendFormat": "OS abertas",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "Healthcheck / uptime (oficina-app)",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+          "targets": [
+            {
+              "expr": "up{job=\"oficina-app\"}",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "Falhas de notificacao por canal",
+          "type": "timeseries",
+          "gridPos": { "h": 6, "w": 12, "x": 12, "y": 0 },
+          "targets": [
+            {
+              "expr": "sum(rate(oficina_notificacoes_falhas_total[5m])) by (canal)",
+              "legendFormat": "{{canal}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Tempo medio no status (por status da OS)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+          "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+          "targets": [
+            {
+              "expr": "sum(rate(oficina_ordens_servico_tempo_no_status_seconds_sum[1h])) by (status) / sum(rate(oficina_ordens_servico_tempo_no_status_seconds_count[1h])) by (status)",
+              "legendFormat": "{{status}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "Latencia das APIs (p95, por rota)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+          "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{job=\"oficina-app\"}[5m])) by (le, uri))",
+              "legendFormat": "{{uri}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "CPU do pod (cores)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+          "targets": [
+            {
+              "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"oficina\", pod=~\"oficina-app.*\"}[5m])) by (pod)",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "title": "Memoria do pod (working set)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+          "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+          "targets": [
+            {
+              "expr": "sum(container_memory_working_set_bytes{namespace=\"oficina\", pod=~\"oficina-app.*\"}) by (pod)",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ]
+        }
+      ]
+    }

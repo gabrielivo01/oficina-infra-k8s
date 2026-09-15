@@ -1,0 +1,42 @@
+# Requer o CRD PrometheusRule do Prometheus Operator. Regras de alerta para
+# falhas no processamento de ordens de serviço e nas integrações (mail),
+# consumidas pelo Alertmanager do kube-prometheus-stack.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: oficina-app-alerts
+  namespace: oficina
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: oficina-app
+      rules:
+        - alert: OficinaNotificacaoFalhando
+          expr: sum(rate(oficina_notificacoes_falhas_total[15m])) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Falhas ao notificar atualizações de OS"
+            description: "Houve pelo menos uma falha de notificação (canal={{ $labels.canal }}) nos últimos 15 minutos."
+
+        - alert: OficinaTaxaDeErro5xxAlta
+          expr: |
+            sum(rate(http_server_requests_seconds_count{job="oficina-app", status=~"5.."}[5m]))
+              / sum(rate(http_server_requests_seconds_count{job="oficina-app"}[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Taxa de erro 5xx acima de 5% na oficina-app"
+            description: "Mais de 5% das requisições HTTP nos últimos 5 minutos retornaram 5xx — possível falha no processamento de ordens de serviço ou outra integração."
+
+        - alert: OficinaAppIndisponivel
+          expr: up{job="oficina-app"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "oficina-app fora do ar"
+            description: "O target {{ $labels.instance }} está reportando up=0 há mais de 2 minutos."
