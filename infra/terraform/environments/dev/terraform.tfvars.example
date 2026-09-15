@@ -2,11 +2,16 @@ project_name = "oficina"
 environment  = "dev"
 aws_region   = "us-east-1"
 
+# lambda_function_name/lambda_invoke_arn e app_public_url tem defaults
+# placeholder (ver main.tf) para permitir o primeiro apply antes do
+# oficina-auth-lambda/oficina-app existirem. Descomente e preencha os 3
+# abaixo num SEGUNDO apply, depois que os outros repos estiverem no ar:
+
 # obtidos com: terraform -chdir=<checkout-do-oficina-auth-lambda>/infra/terraform/environments/dev output -raw lambda_function_name / lambda_invoke_arn
-lambda_function_name = "oficina-dev-auth-cpf"
-lambda_invoke_arn     = "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:<account-id>:function:oficina-dev-auth-cpf/invocations"
+# lambda_function_name = "oficina-dev-auth-cpf"
+# lambda_invoke_arn     = "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:<account-id>:function:oficina-dev-auth-cpf/invocations"
 
 # preencher DEPOIS de aplicar o overlay k8s do repo oficina-app e o Load
 # Balancer do Service oficina-app-lb terminar de ser provisionado:
 # kubectl -n oficina get svc oficina-app-lb -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-app_public_url = "http://<hostname-do-oficina-app-lb>"
+# app_public_url = "http://<hostname-do-oficina-app-lb>"

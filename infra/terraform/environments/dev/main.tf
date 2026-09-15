@@ -32,13 +32,25 @@ variable "aws_region" {
 }
 
 variable "lambda_function_name" {
-  description = "Output lambda_function_name do repositorio oficina-auth-lambda (terraform output -raw lambda_function_name)."
+  description = <<-EOT
+    Output lambda_function_name do repositorio oficina-auth-lambda (terraform
+    output -raw lambda_function_name). O default abaixo e um placeholder
+    valido (para nao quebrar o primeiro apply, antes do oficina-auth-lambda
+    existir) e PRECISA ser substituido em seguida por um novo apply com o
+    valor real.
+  EOT
   type        = string
+  default     = "oficina-dev-auth-cpf-placeholder"
 }
 
 variable "lambda_invoke_arn" {
-  description = "Output lambda_invoke_arn do repositorio oficina-auth-lambda (terraform output -raw lambda_invoke_arn)."
+  description = <<-EOT
+    Output lambda_invoke_arn do repositorio oficina-auth-lambda (terraform
+    output -raw lambda_invoke_arn). Mesmo esquema de placeholder de
+    lambda_function_name acima.
+  EOT
   type        = string
+  default     = "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:000000000000:function:oficina-dev-auth-cpf-placeholder/invocations"
 }
 
 variable "app_public_url" {
