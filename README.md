@@ -199,10 +199,10 @@ padrão do chart desligados, requests/limits pequenos e Ingress do Grafana.
 | ingress-nginx (2 workers do nginx) | 90Mi | 256Mi |
 | Prometheus | 256Mi | 768Mi |
 | Grafana (+2 sidecars) | 192Mi (+2×64Mi) | 512Mi (+2×192Mi) |
+| Prometheus Operator / kube-state-metrics | 32Mi cada | 128Mi cada |
 
 Consumo medido após o `plataforma_up.sh` (WSL2, Docker com 3,9 GB): nós do kind
 com ~1,1 GB cada (`docker stats`), ~2,2 GB no total.
-| Prometheus Operator / kube-state-metrics | 32Mi cada | 128Mi cada |
 
 ### No GitHub Actions
 
