@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Remove trailers de coautoria e linhas geradas automaticamente da mensagem de commit.
+sed -i -E '/^Co-Authored-By:/Id; /^Generated with /Id; /^[A-Za-z]+-Session:/Id' "$1"
+sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$1"

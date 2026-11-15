@@ -1,0 +1,184 @@
+# Plataforma local de desenvolvimento da Fase 4 (microsservicos + saga).
+# Sobe apenas a infraestrutura compartilhada; os servicos rodam no host
+# (./mvnw spring-boot:run) ou em compose proprio ligado a rede "oficina-plataforma".
+#
+#   docker compose -f local/docker-compose.yml up -d
+#   docker compose -f local/docker-compose.yml ps        # todos "healthy"
+#   docker compose -f local/docker-compose.yml down      # -v apaga os dados
+#
+# Portas do host podem ser trocadas por variavel de ambiente (ex.: se o
+# docker-compose.yml do repo oficina estiver no ar, POSTGRES_OS_PORT=15432).
+# Credenciais aqui sao exclusivamente de desenvolvimento.
+name: oficina-plataforma
+
+services:
+  rabbitmq:
+    image: rabbitmq:4.3-management-alpine
+    hostname: rabbitmq
+    restart: unless-stopped
+    environment:
+      # Poucos schedulers Erlang: menos memoria e CPU ociosa em maquina de dev.
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+S 2:2 +sbwt none +sbwtdcpu none +sbwtdio none"
+    volumes:
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/90-oficina.conf:ro
+      - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+      - rabbitmq-data:/var/lib/rabbitmq
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  postgres-os:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: oficina_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-os-data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_OS_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d oficina_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  postgres-execution:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: execution_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-execution-data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_EXECUTION_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d execution_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  # Replica set de 1 no (rs0): o Billing Service pode usar transacoes Mongo
+  # (outbox atomico). O healthcheck inicializa o replica set na primeira vez
+  # (idempotente) e so fica "healthy" quando o no e PRIMARY.
+  # Conexao: mongodb://localhost:27017/billing_db?directConnection=true
+  # (sem autenticacao: replica set com auth exige keyfile; aceitavel so em dev).
+  mongodb:
+    image: mongo:8.0
+    restart: unless-stopped
+    command: ["--replSet", "rs0", "--bind_ip_all", "--wiredTigerCacheSizeGB", "0.25"]
+    volumes:
+      - mongodb-data:/data/db
+    ports:
+      - "${MONGODB_PORT:-27017}:27017"
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - >-
+          try { rs.status() } catch (e) {
+          rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }) };
+          quit(db.hello().isWritablePrimary ? 0 : 1)
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  jaeger:
+    image: jaegertracing/jaeger:2.22.0
+    restart: unless-stopped
+    command: ["--config", "/etc/jaeger/config.yaml"]
+    volumes:
+      - ./jaeger-config.yaml:/etc/jaeger/config.yaml:ro
+    ports:
+      - "${JAEGER_UI_PORT:-16686}:16686"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:13133/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.164.0
+    restart: unless-stopped
+    command: ["--config", "/etc/otelcol-contrib/config.yaml"]
+    depends_on:
+      jaeger:
+        condition: service_healthy
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+      # A imagem do collector nao tem shell nem wget: o busybox estatico e
+      # montado direto da imagem (volume do tipo image, Docker 28+) so para o
+      # healthcheck.
+      - type: image
+        source: busybox:1.37-musl
+        target: /hc
+    ports:
+      - "${OTEL_GRPC_PORT:-4317}:4317"
+      - "${OTEL_HTTP_PORT:-4318}:4318"
+    healthcheck:
+      test: ["CMD", "/hc/bin/busybox", "wget", "-q", "--spider", "http://localhost:13133/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    restart: unless-stopped
+    ports:
+      - "${MAILHOG_SMTP_PORT:-1025}:1025"
+      - "${MAILHOG_UI_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8025/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+
+networks:
+  default:
+    name: oficina-plataforma
+
+volumes:
+  rabbitmq-data:
+  postgres-os-data:
+  postgres-execution-data:
+  mongodb-data:

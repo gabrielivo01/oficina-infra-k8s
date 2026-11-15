@@ -1,0 +1,41 @@
+# Jaeger v2 (all-in-one) com armazenamento em memoria, limitado a poucos
+# traces para caber no ambiente de dev (WSL2/kind com pouca RAM). Os traces se
+# perdem ao reiniciar o container/pod. Usado no Docker Compose e no kind.
+service:
+  extensions: [jaeger_storage, jaeger_query, healthcheckv2]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [jaeger_storage_exporter]
+
+extensions:
+  healthcheckv2:
+    use_v2: true
+    http:
+      endpoint: 0.0.0.0:13133
+  jaeger_query:
+    storage:
+      traces: memoria
+    http:
+      endpoint: 0.0.0.0:16686
+  jaeger_storage:
+    backends:
+      memoria:
+        memory:
+          max_traces: 20000
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+exporters:
+  jaeger_storage_exporter:
+    trace_storage: memoria

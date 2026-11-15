@@ -1,0 +1,36 @@
+# OpenTelemetry Collector da plataforma local (Docker Compose e kind).
+# Recebe traces OTLP dos servicos (gRPC 4317 / HTTP 4318) e exporta para o
+# Jaeger via OTLP gRPC. O host "jaeger" resolve tanto na rede do Compose
+# quanto no namespace "plataforma" do kind (Service jaeger).
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 100
+    spike_limit_mib: 25
+  batch: {}
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/jaeger]

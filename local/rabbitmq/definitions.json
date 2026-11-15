@@ -1,0 +1,67 @@
+{
+  "rabbitmq_version": "4.3.7",
+  "vhosts": [
+    { "name": "/" }
+  ],
+  "users": [
+    {
+      "name": "oficina",
+      "password_hash": "MyfqYy7Oh5MV1o9eaiD35sFpRD7lhH5vP6889qPtMgh0/X5y",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": ["administrator"],
+      "limits": {}
+    }
+  ],
+  "permissions": [
+    { "user": "oficina", "vhost": "/", "configure": ".*", "write": ".*", "read": ".*" }
+  ],
+  "exchanges": [
+    { "name": "oficina.comandos", "vhost": "/", "type": "direct", "durable": true, "auto_delete": false, "internal": false, "arguments": {} },
+    { "name": "oficina.eventos", "vhost": "/", "type": "topic", "durable": true, "auto_delete": false, "internal": false, "arguments": {} },
+    { "name": "oficina.dlx", "vhost": "/", "type": "direct", "durable": true, "auto_delete": false, "internal": false, "arguments": {} }
+  ],
+  "queues": [
+    {
+      "name": "execution.comandos", "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-delivery-limit": 3,
+        "x-dead-letter-exchange": "oficina.dlx",
+        "x-dead-letter-routing-key": "execution.comandos.dlq"
+      }
+    },
+    {
+      "name": "billing.comandos", "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-delivery-limit": 3,
+        "x-dead-letter-exchange": "oficina.dlx",
+        "x-dead-letter-routing-key": "billing.comandos.dlq"
+      }
+    },
+    {
+      "name": "os.saga.eventos", "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-delivery-limit": 3,
+        "x-dead-letter-exchange": "oficina.dlx",
+        "x-dead-letter-routing-key": "os.saga.eventos.dlq"
+      }
+    },
+    { "name": "execution.comandos.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "quorum" } },
+    { "name": "billing.comandos.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "quorum" } },
+    { "name": "os.saga.eventos.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "quorum" } }
+  ],
+  "bindings": [
+    { "source": "oficina.comandos", "vhost": "/", "destination": "execution.comandos", "destination_type": "queue", "routing_key": "execution.comandos", "arguments": {} },
+    { "source": "oficina.comandos", "vhost": "/", "destination": "billing.comandos", "destination_type": "queue", "routing_key": "billing.comandos", "arguments": {} },
+    { "source": "oficina.eventos", "vhost": "/", "destination": "os.saga.eventos", "destination_type": "queue", "routing_key": "#", "arguments": {} },
+    { "source": "oficina.dlx", "vhost": "/", "destination": "execution.comandos.dlq", "destination_type": "queue", "routing_key": "execution.comandos.dlq", "arguments": {} },
+    { "source": "oficina.dlx", "vhost": "/", "destination": "billing.comandos.dlq", "destination_type": "queue", "routing_key": "billing.comandos.dlq", "arguments": {} },
+    { "source": "oficina.dlx", "vhost": "/", "destination": "os.saga.eventos.dlq", "destination_type": "queue", "routing_key": "os.saga.eventos.dlq", "arguments": {} }
+  ],
+  "policies": [],
+  "parameters": [],
+  "global_parameters": [],
+  "topic_permissions": []
+}
