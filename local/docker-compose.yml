@@ -16,6 +16,11 @@ services:
     image: rabbitmq:4.3-management-alpine
     hostname: rabbitmq
     restart: unless-stopped
+    # Roda direto como o usuario "rabbitmq" da imagem (uid 100, gid 101). Como
+    # root, o healthcheck (rabbitmq-diagnostics) criava o .erlang.cookie como
+    # root num volume novo antes do servidor (que desce para rabbitmq via
+    # su-exec), e o servidor falhava com "eacces" ao ler o cookie.
+    user: "100:101"
     environment:
       # Poucos schedulers Erlang: menos memoria e CPU ociosa em maquina de dev.
       RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+S 2:2 +sbwt none +sbwtdcpu none +sbwtdio none"

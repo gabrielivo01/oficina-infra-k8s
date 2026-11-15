@@ -39,6 +39,14 @@ spec:
         app: rabbitmq
     spec:
       terminationGracePeriodSeconds: 30
+      # Usuario "rabbitmq" da imagem (uid 100, gid 101): a readinessProbe exec
+      # roda com o mesmo usuario do servidor e nao cria o .erlang.cookie como
+      # root no PVC (o servidor falharia com "eacces" ao ler o cookie).
+      securityContext:
+        runAsUser: 100
+        runAsGroup: 101
+        runAsNonRoot: true
+        fsGroup: 101
       containers:
         - name: rabbitmq
           image: rabbitmq:4.3-management-alpine
