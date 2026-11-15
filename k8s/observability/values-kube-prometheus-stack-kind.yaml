@@ -1,0 +1,96 @@
+# Perfil "kind" do kube-prometheus-stack: aplicado POR CIMA de
+# values-kube-prometheus-stack.yaml quando OBSERVABILITY_PROFILE=kind
+# (scripts/install_observability_stack.sh, chamado por scripts/plataforma_up.sh).
+#
+# Objetivo: caber num Docker com ~4 GB de RAM (WSL2) e no runner do GitHub
+# Actions. Uma replica de cada, retencao curta, recursos pequenos e sem os
+# componentes que nao funcionam ou nao fazem sentido no kind.
+
+# Sem Alertmanager: os alertas continuam visiveis no Prometheus (/alerts).
+alertmanager:
+  enabled: false
+
+# Componentes do control-plane do kind nao expoem metricas para fora do no;
+# os ServiceMonitors so gerariam alvos DOWN e alertas falsos.
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+# Os nos do kind sao containers no mesmo host: o node-exporter mediria o host
+# (e falha no Docker do WSL2/Docker Desktop por propagacao de montagem do "/").
+nodeExporter:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    replicas: 1
+    retention: 6h
+    retentionSize: 512MB
+    scrapeInterval: 30s
+    evaluationInterval: 30s
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 768Mi
+
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+
+grafana:
+  replicas: 1
+  # Credencial exclusivamente de dev local (o cluster kind nao e exposto).
+  adminPassword: admin
+  # Dashboards padrao do chart desligados para economizar memoria; o dashboard
+  # da oficina (grafana-dashboard-oficina.yaml) continua sendo carregado.
+  defaultDashboardsEnabled: false
+  # O Grafana 13 roda migracoes na primeira subida (banco SQLite em emptyDir):
+  # com 256Mi tomava OOMKilled, e numa maquina carregada demora alguns minutos.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 192Mi
+    limits:
+      memory: 512Mi
+  livenessProbe:
+    httpGet:
+      path: /api/health
+      port: 3000
+    initialDelaySeconds: 120
+    periodSeconds: 10
+    timeoutSeconds: 30
+    failureThreshold: 20
+  # Vale para os dois sidecars (dashboards e datasources). Com 96Mi eles
+  # tomavam OOMKilled ao listar os ConfigMaps de todos os namespaces.
+  sidecar:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        memory: 192Mi
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - grafana.localtest.me
+    path: /

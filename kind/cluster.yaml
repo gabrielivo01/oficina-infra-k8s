@@ -1,0 +1,27 @@
+# Cluster kind da plataforma (dev local e CI). Criado por scripts/plataforma_up.sh.
+# 1 control-plane (onde roda o ingress-nginx, label ingress-ready) + 1 worker
+# (onde rodam as cargas).
+#
+# O ingress fica em portas altas do host, so em 127.0.0.1, para nao conflitar
+# com servidores web locais nas portas 80/443 nem exigir privilegio:
+#   http://grafana.localtest.me:8081, http://jaeger.localtest.me:8081,
+#   http://rabbitmq.localtest.me:8081  ("*.localtest.me" resolve para 127.0.0.1)
+# Se 8081/8443 estiverem ocupadas, troque hostPort aqui (e INGRESS_HTTP_PORT
+# ao rodar o plataforma_up.sh).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: oficina
+nodes:
+  - role: control-plane
+    labels:
+      ingress-ready: "true"
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 8081
+        listenAddress: "127.0.0.1"
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 8443
+        listenAddress: "127.0.0.1"
+        protocol: TCP
+  - role: worker

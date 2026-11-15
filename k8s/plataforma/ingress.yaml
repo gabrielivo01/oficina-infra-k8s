@@ -1,0 +1,31 @@
+# UIs da plataforma via ingress-nginx do kind (127.0.0.1:8081/8443 no host,
+# ver kind/cluster.yaml). "*.localtest.me" resolve para 127.0.0.1; sem DNS:
+#   curl -H 'Host: jaeger.localtest.me' http://127.0.0.1:8081/
+# O Grafana tem Ingress proprio (values-kube-prometheus-stack-kind.yaml).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: plataforma-uis
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: jaeger.localtest.me
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: jaeger
+                port:
+                  name: ui
+    - host: rabbitmq.localtest.me
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: rabbitmq
+                port:
+                  name: management

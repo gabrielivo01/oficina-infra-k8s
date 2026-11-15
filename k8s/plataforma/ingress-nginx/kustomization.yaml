@@ -1,0 +1,34 @@
+# ingress-nginx para o kind. deploy-kind-v1.15.1.yaml e copia sem alteracoes de
+# https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.15.1/deploy/static/provider/kind/deploy.yaml
+# (ultima versao publicada; o projeto ingress-nginx foi descontinuado em 2026).
+# Versionado no repo para validar offline e nao depender do GitHub no CI.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - deploy-kind-v1.15.1.yaml
+
+patches:
+  # O manifest usa hostPort 80/443, mas so o control-plane tem essas portas
+  # mapeadas no host (kind/cluster.yaml, label ingress-ready=true).
+  - target:
+      kind: Deployment
+      name: ingress-nginx-controller
+    patch: |-
+      - op: add
+        path: /spec/template/spec/nodeSelector/ingress-ready
+        value: "true"
+      - op: add
+        path: /spec/template/spec/containers/0/resources/limits
+        value:
+          memory: 256Mi
+  # O nginx cria um worker por CPU do host (16 no WSL2 de dev): ~16 workers
+  # estouram o limite de memoria (OOMKilled). Dois bastam para o kind.
+  - target:
+      kind: ConfigMap
+      name: ingress-nginx-controller
+    patch: |-
+      - op: add
+        path: /data
+        value:
+          worker-processes: "2"
