@@ -42,7 +42,7 @@ port_forward() {
   kubectl -n "$NAMESPACE" port-forward "svc/$servico" "$porta_local:$porta_servico" >/dev/null 2>&1 &
   PIDS+=("$!")
   for _ in $(seq 1 30); do
-    curl -fsS "http://127.0.0.1:$porta_local/actuator/health" >/dev/null 2>&1 && return 0
+    curl -fsS "http://127.0.0.1:$porta_local/actuator/health/readiness" >/dev/null 2>&1 && return 0
     sleep 1
   done
   falhar "port-forward para $servico nao respondeu"
