@@ -220,6 +220,20 @@ na Fase 7):
   run: oficina-infra-k8s/scripts/plataforma_up.sh
 ```
 
+### Deploy dos serviços e smoke test (CD da Fase 4)
+
+Com a plataforma no ar, os scripts abaixo implantam os 3 serviços (overlays `k8s/overlays/local` de cada repo,
+checkouts irmãos deste) e validam a Saga de ponta a ponta. São os mesmos passos do `cd.yml` de cada serviço.
+
+```bash
+scripts/deploy_servicos_kind.sh   # carrega as imagens no kind, cria os Secrets (JWT compartilhado, Mongo), aplica
+                                  # os overlays, espera os rollouts e faz health check de cada serviço
+scripts/smoke_test_e2e.sh         # abre uma OS, faz diagnóstico/orçamento/execução pelas APIs e espera FINALIZADA
+```
+
+O smoke test usa o gateway fake do Billing com `APP_PAGAMENTO_FAKE_STATUS_INICIAL=APROVADO` (definido pelo deploy)
+e os endpoints do mecânico no Execution; sem `OS_URL`/`EXECUTION_URL`/`BILLING_URL` ele abre port-forward sozinho.
+
 ### Validação dos arquivos
 
 ```bash
