@@ -87,10 +87,14 @@ helm upgrade --install "$HELM_RELEASE_NAME" prometheus-community/kube-prometheus
 echo "Ensuring namespace $APP_NAMESPACE exists"
 kubectl create namespace "$APP_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
-echo "Applying oficina ServiceMonitor, PrometheusRule and Grafana dashboard"
+echo "Applying ServiceMonitors, PrometheusRule and Grafana dashboards"
 kubectl apply -f "$ROOT_DIR/k8s/observability/servicemonitor-oficina-app.yaml"
+kubectl apply -f "$ROOT_DIR/k8s/observability/servicemonitor-rabbitmq.yaml"
 kubectl apply -f "$ROOT_DIR/k8s/observability/prometheusrule-oficina.yaml"
 kubectl apply -f "$ROOT_DIR/k8s/observability/grafana-dashboard-oficina.yaml"
+kubectl apply -f "$ROOT_DIR/k8s/observability/grafana-dashboard-execution.yaml"
+kubectl apply -f "$ROOT_DIR/k8s/observability/grafana-dashboard-billing.yaml"
+kubectl apply -f "$ROOT_DIR/k8s/observability/grafana-dashboard-saga.yaml"
 
 echo "Done. Grafana (admin / see values-kube-prometheus-stack*.yaml adminPassword):"
 echo "  kubectl -n $MONITORING_NAMESPACE port-forward svc/$HELM_RELEASE_NAME-grafana 3000:80"

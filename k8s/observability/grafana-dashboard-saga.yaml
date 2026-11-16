@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oficina-saga-dashboard
+  namespace: oficina
+  labels:
+    grafana_dashboard: "1"
+data:
+  oficina-saga.json: |
+    {
+      "uid": "oficina-saga",
+      "title": "Oficina - Saga",
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "15s",
+      "panels": [
+        {
+          "id": 1,
+          "title": "Sagas iniciadas",
+          "type": "stat",
+          "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+          "targets": [{ "expr": "increase(oficina_sagas_iniciadas_total[24h])", "refId": "A" }]
+        },
+        {
+          "id": 2,
+          "title": "Sagas concluídas",
+          "type": "stat",
+          "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+          "targets": [{ "expr": "increase(oficina_sagas_concluidas_total[24h])", "refId": "A" }]
+        },
+        {
+          "id": 3,
+          "title": "Sagas compensadas",
+          "type": "stat",
+          "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+          "targets": [{ "expr": "increase(oficina_sagas_compensadas_total[24h])", "refId": "A" }]
+        },
+        {
+          "id": 4,
+          "title": "Falhas de compensação",
+          "type": "stat",
+          "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+          "targets": [{ "expr": "increase(oficina_sagas_falha_compensacao_total[24h])", "refId": "A" }]
+        },
+        {
+          "id": 5,
+          "title": "Duração média por etapa",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+          "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+          "targets": [{ "expr": "sum(rate(oficina_saga_duracao_etapa_seconds_sum[15m])) by (etapa) / sum(rate(oficina_saga_duracao_etapa_seconds_count[15m])) by (etapa)", "legendFormat": "{{etapa}}", "refId": "A" }]
+        },
+        {
+          "id": 6,
+          "title": "Mensagens pendentes e DLQ",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+          "targets": [
+            { "expr": "sum(rabbitmq_queue_messages_ready{queue!~\".*\\\\.dlq\"}) by (queue)", "legendFormat": "pendentes: {{queue}}", "refId": "A" },
+            { "expr": "sum(rabbitmq_queue_messages_ready{queue=~\".*\\\\.dlq\"}) by (queue)", "legendFormat": "DLQ: {{queue}}", "refId": "B" }
+          ]
+        }
+      ]
+    }

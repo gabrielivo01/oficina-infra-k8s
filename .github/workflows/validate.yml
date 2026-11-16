@@ -1,0 +1,57 @@
+name: Validate infrastructure
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-static:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.30.0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Install static validators
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          curl -fsSLo /tmp/kubeconform.tar.gz \
+            https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          tar -xzf /tmp/kubeconform.tar.gz -C /tmp kubeconform
+          sudo install /tmp/kubeconform /usr/local/bin/kubeconform
+          sudo apt-get update
+          sudo apt-get install --yes shellcheck
+
+      - name: Validate workflow and shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          actionlint
+          shellcheck scripts/*.sh
+          bash -n scripts/*.sh
+
+      - name: Render and validate Kubernetes manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl kustomize --load-restrictor=LoadRestrictionsNone k8s/plataforma \
+            > /tmp/plataforma-rendered.yaml
+          kubectl kustomize k8s/plataforma/ingress-nginx \
+            > /tmp/ingress-rendered.yaml
+          kubeconform -strict -ignore-missing-schemas /tmp/plataforma-rendered.yaml /tmp/ingress-rendered.yaml
+          for manifest in k8s/observability/*.yaml; do
+            kubeconform -strict -ignore-missing-schemas "$manifest"
+          done

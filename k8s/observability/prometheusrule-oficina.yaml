@@ -12,6 +12,15 @@ spec:
   groups:
     - name: oficina-app
       rules:
+        - alert: OficinaSagaFalhaCompensacao
+          expr: increase(oficina_sagas_falha_compensacao_total[5m]) > 0
+          for: 0m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Uma Saga entrou em falha de compensação"
+            description: "Uma compensação esgotou as tentativas configuradas; consulte as sagas em falha no OS Service."
+
         - alert: OficinaNotificacaoFalhando
           expr: sum(rate(oficina_notificacoes_falhas_total[15m])) > 0
           for: 5m
@@ -23,20 +32,40 @@ spec:
 
         - alert: OficinaTaxaDeErro5xxAlta
           expr: |
-            sum(rate(http_server_requests_seconds_count{job="oficina-app", status=~"5.."}[5m]))
-              / sum(rate(http_server_requests_seconds_count{job="oficina-app"}[5m])) > 0.05
+            sum(rate(http_server_requests_seconds_count{job=~".*oficina.*", status=~"5.."}[5m]))
+              / sum(rate(http_server_requests_seconds_count{job=~".*oficina.*"}[5m])) > 0.05
           for: 5m
           labels:
             severity: critical
           annotations:
-            summary: "Taxa de erro 5xx acima de 5% na oficina-app"
-            description: "Mais de 5% das requisições HTTP nos últimos 5 minutos retornaram 5xx — possível falha no processamento de ordens de serviço ou outra integração."
+            summary: "Taxa de erro 5xx acima de 5% nos serviços Oficina"
+            description: "Mais de 5% das requisições HTTP nos últimos 5 minutos retornaram 5xx."
 
         - alert: OficinaAppIndisponivel
-          expr: up{job="oficina-app"} == 0
+          expr: up{job=~".*oficina.*"} == 0
           for: 2m
           labels:
             severity: critical
           annotations:
-            summary: "oficina-app fora do ar"
-            description: "O target {{ $labels.instance }} está reportando up=0 há mais de 2 minutos."
+            summary: "Serviço Oficina fora do ar"
+            description: "O target {{ $labels.instance }} do serviço {{ $labels.service }} reporta up=0 há mais de 2 minutos."
+
+        - alert: OficinaLatenciaP95Alta
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(http_server_requests_seconds_bucket{job=~".*oficina.*"}[5m])) by (le, service, uri)) > 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Latência p95 acima de 1 segundo"
+            description: "A rota {{ $labels.uri }} do serviço {{ $labels.service }} excedeu 1 segundo no p95."
+
+        - alert: OficinaMensagensEmDLQ
+          expr: sum(rabbitmq_queue_messages_ready{queue=~".*\\.dlq"}) by (queue) > 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Mensagens pendentes em DLQ"
+            description: "A fila {{ $labels.queue }} contém mensagens que falharam após as tentativas configuradas."
