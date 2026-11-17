@@ -1,0 +1,114 @@
+name: Observabilidade no kind
+
+# Fase 4: sobe a plataforma completa num kind efêmero do runner, implanta os 3 serviços (imagens :latest do GHCR),
+# roda o smoke test E2E da Saga e valida a observabilidade: dashboards do Grafana com dados, alvos do Prometheus UP
+# e trace no Jaeger atravessando OS, Execution e Billing. Publica as evidências (resumo, JSON e telas) como artifact.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/observabilidade-kind.yml
+      - scripts/validar_observabilidade.sh
+      - scripts/capturar_telas_observabilidade.cjs
+      - k8s/observability/**
+      - k8s/plataforma/**
+
+concurrency:
+  group: observabilidade-kind-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  observabilidade:
+    name: Plataforma + serviços + validação de traces e dashboards
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      OWNER: ${{ github.repository_owner }}
+      KIND_VERSION: v0.27.0
+      PLAYWRIGHT_VERSION: 1.49.1
+
+    steps:
+      - name: Checkout da infra
+        uses: actions/checkout@v4
+        with:
+          path: oficina-infra-k8s
+
+      - name: Checkout dos serviços
+        run: |
+          set -euo pipefail
+          token="${{ secrets.CROSS_REPO_TOKEN || github.token }}"
+          for repo in oficina oficina-execution-service oficina-billing-service; do
+            git clone --depth 1 "https://x-access-token:${token}@github.com/${OWNER}/${repo}.git" "$repo"
+          done
+
+      - name: Instalar kind
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL --proto "=https" --tlsv1.2 -o "$HOME/.local/bin/kind" "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x "$HOME/.local/bin/kind"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Instalar Playwright (Chromium) para as telas
+        run: |
+          set -euo pipefail
+          npm install --silent --no-audit --no-fund --prefix "$RUNNER_TEMP/playwright" "playwright@${PLAYWRIGHT_VERSION}"
+          "$RUNNER_TEMP/playwright/node_modules/.bin/playwright" install --with-deps chromium
+          echo "NODE_PATH=$RUNNER_TEMP/playwright/node_modules" >> "$GITHUB_ENV"
+
+      - name: Subir a plataforma (kind, ingress, RabbitMQ, Jaeger, OTel, Prometheus/Grafana)
+        run: bash oficina-infra-k8s/scripts/plataforma_up.sh
+
+      - name: Deploy dos 3 serviços
+        env:
+          OFICINA_DIR: ${{ github.workspace }}/oficina
+          EXECUTION_DIR: ${{ github.workspace }}/oficina-execution-service
+          BILLING_DIR: ${{ github.workspace }}/oficina-billing-service
+        run: |
+          set -euo pipefail
+          owner="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
+          export IMAGE_OFICINA="ghcr.io/${owner}/oficina:latest"
+          export IMAGE_EXECUTION="ghcr.io/${owner}/oficina-execution-service:latest"
+          export IMAGE_BILLING="ghcr.io/${owner}/oficina-billing-service:latest"
+          bash oficina-infra-k8s/scripts/deploy_servicos_kind.sh
+
+      - name: Smoke test E2E da Saga
+        run: bash oficina-infra-k8s/scripts/smoke_test_e2e.sh
+
+      - name: Validar traces e dashboards
+        env:
+          OUT_DIR: ${{ github.workspace }}/evidencias-observabilidade
+          CAPTURAR_TELAS: "true"
+        run: bash oficina-infra-k8s/scripts/validar_observabilidade.sh
+
+      - name: Publicar evidências
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidencias-observabilidade
+          path: evidencias-observabilidade/
+          if-no-files-found: ignore
+
+      - name: Coletar estado e logs dos pods
+        if: failure()
+        run: |
+          mkdir -p diagnostico
+          kubectl get pods -A -o wide > diagnostico/pods.txt || true
+          kubectl get events -A --sort-by=.lastTimestamp > diagnostico/events.txt || true
+          for ns in oficina plataforma monitoring; do
+            for pod in $(kubectl -n "$ns" get pods -o name 2>/dev/null); do
+              kubectl -n "$ns" logs "$pod" --all-containers --tail=500 > "diagnostico/${ns}-${pod#pod/}.log" 2>&1 || true
+            done
+          done
+
+      - name: Publicar diagnóstico
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostico-kind
+          path: diagnostico/
+          if-no-files-found: ignore
