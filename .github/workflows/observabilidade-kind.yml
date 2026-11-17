@@ -30,7 +30,7 @@ jobs:
     env:
       OWNER: ${{ github.repository_owner }}
       KIND_VERSION: v0.27.0
-      PLAYWRIGHT_VERSION: 1.49.1
+      PLAYWRIGHT_VERSION: 1.64.1
 
     steps:
       - name: Checkout da infra
