@@ -115,24 +115,37 @@ def salvar(nome, conteudo):
         json.dump(conteudo, f, ensure_ascii=False, indent=2)
 
 
+def post_json(url, corpo, headers=None):
+    req = urllib.request.Request(url, data=json.dumps(corpo).encode(), method="POST",
+                                 headers={"Content-Type": "application/json", **(headers or {})})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.status, json.load(resp)
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read() or b"{}")
+
+
 def paineis(painel_lista):
     for p in painel_lista:
         yield from paineis(p.get("panels", []))
         for alvo in p.get("targets", []):
             if alvo.get("expr"):
-                yield p.get("title", "?"), alvo["expr"]
+                yield p.get("title", "?"), alvo["expr"], alvo.get("datasource") or p.get("datasource")
 
 
 # 1. Dashboards carregados no Grafana (pelo sidecar) e suas consultas
 consultas = []
+consultas_grafana = []
 for uid in DASHBOARDS:
     try:
         dashboard = get_json(f"{GRAFANA}/api/dashboards/uid/{uid}", {"Authorization": AUTH})["dashboard"]
     except Exception as exc:  # noqa: BLE001
         erros.append(f"dashboard {uid} não encontrado no Grafana ({exc})")
         continue
-    for titulo, expr in paineis(dashboard.get("panels", [])):
+    salvar(f"dashboard_{uid}.json", dashboard)
+    for titulo, expr, datasource in paineis(dashboard.get("panels", [])):
         consultas.append((dashboard["title"], titulo, expr))
+        consultas_grafana.append((dashboard["title"], titulo, expr, datasource))
 
 # 2. Paineis com dados: as janelas de rate/increase precisam de algumas coletas apos o smoke test
 fim = time.time() + TIMEOUT
@@ -160,6 +173,35 @@ for d, t, e, r in resultados:
     resumo.append(f"| {d} | {t} | {len(r)} | {situacao} |")
 if concluidas < 1:
     erros.append("oficina_sagas_concluidas_total não registrou a Saga do smoke test")
+
+# 2b. As mesmas consultas pelo Grafana (/api/ds/query), como a UI faz: pega erro de datasource ou de consulta que
+#     nao aparece consultando o Prometheus direto. Painel sem datasource usa o datasource padrao do Grafana.
+datasources = get_json(f"{GRAFANA}/api/datasources", {"Authorization": AUTH})
+salvar("grafana_datasources.json", datasources)
+padrao = next((d for d in datasources if d.get("isDefault")), None)
+resumo += ["", "## Grafana: consultas pela API do Grafana", "",
+           f"Datasource padrão: `{(padrao or {}).get('name')}` (uid `{(padrao or {}).get('uid')}`)", "",
+           "| Dashboard | Painel | HTTP | Frames | Erro |", "|---|---|---|---|---|"]
+registros_grafana = []
+for d, t, e, datasource in consultas_grafana:
+    ref = datasource if isinstance(datasource, dict) and datasource.get("uid") else (
+        {"uid": padrao["uid"], "type": padrao["type"]} if padrao else None)
+    if ref is None:
+        erros.append("Grafana sem datasource padrão para os painéis sem datasource")
+        break
+    status, corpo = post_json(f"{GRAFANA}/api/ds/query", {
+        "from": "now-30m", "to": "now",
+        "queries": [{"refId": "A", "datasource": ref, "expr": e, "instant": True, "range": False,
+                     "intervalMs": 15000, "maxDataPoints": 100}]}, {"Authorization": AUTH})
+    resultado = (corpo.get("results") or {}).get("A") or {}
+    erro = resultado.get("error") or (corpo.get("message") if status >= 400 else None)
+    frames = len(resultado.get("frames") or [])
+    registros_grafana.append({"dashboard": d, "painel": t, "expr": e, "datasource": ref, "http": status,
+                              "erro": erro, "frames": frames})
+    resumo.append(f"| {d} | {t} | {status} | {frames} | {erro or ''} |")
+    if erro or status >= 400:
+        erros.append(f"Grafana falhou ao consultar o painel {d} / {t}: HTTP {status} {erro or ''}")
+salvar("grafana_consultas.json", registros_grafana)
 
 # 3. Alvos do Prometheus
 resumo += ["", "## Prometheus: alvos e Saga", "", "| Alvo | Situação |", "|---|---|"]

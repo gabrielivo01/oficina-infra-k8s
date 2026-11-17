@@ -24,12 +24,31 @@ const DASHBOARDS = ["oficina-overview", "oficina-saga", "oficina-execution", "of
       throw new Error(`login no Grafana falhou: HTTP ${login.status()}`);
     }
     const pagina = await grafana.newPage();
+    // Diagnostico do que a UI viu: erros do console e respostas das consultas dos paineis.
+    const diagnostico = [];
+    pagina.on("console", (msg) => {
+      if (msg.type() === "error") diagnostico.push(`[console] ${msg.text()}`);
+    });
+    pagina.on("pageerror", (erro) => diagnostico.push(`[pageerror] ${erro.message}`));
+    pagina.on("response", async (resposta) => {
+      if (resposta.url().includes("/api/ds/query") || resposta.status() >= 400) {
+        let corpo = "";
+        try {
+          corpo = (await resposta.text()).slice(0, 500);
+        } catch {
+          corpo = "(sem corpo)";
+        }
+        diagnostico.push(`[http ${resposta.status()}] ${resposta.request().method()} ${resposta.url()} ${corpo}`);
+      }
+    });
     for (const uid of DASHBOARDS) {
+      diagnostico.push(`=== dashboard ${uid}`);
       await pagina.goto(`${GRAFANA}/d/${uid}?orgId=1&from=now-30m&to=now&kiosk`, { waitUntil: "networkidle" });
-      await pagina.waitForTimeout(5000);
+      await pagina.waitForTimeout(8000);
       await pagina.screenshot({ path: path.join(OUT_DIR, `grafana-${uid}.png`), fullPage: true });
       console.log(`[telas] grafana-${uid}.png`);
     }
+    fs.writeFileSync(path.join(OUT_DIR, "grafana-diagnostico.log"), diagnostico.join("\n") + "\n");
 
     const trace = JSON.parse(fs.readFileSync(path.join(process.env.OUT_DIR, "trace_jaeger.json"), "utf8"));
     const traceId = trace.traceID;
