@@ -74,7 +74,7 @@ PROMETHEUS_URL="http://127.0.0.1:19090" \
   OUT_DIR="$OUT_DIR" \
   TIMEOUT="$TIMEOUT" \
   python3 - <<'PY' || STATUS=$?
-import base64, json, os, re, sys, time, urllib.parse, urllib.request
+import base64, json, os, re, sys, time, urllib.error, urllib.parse, urllib.request
 
 PROMETHEUS = os.environ["PROMETHEUS_URL"]
 GRAFANA = os.environ["GRAFANA_URL"]
@@ -171,9 +171,62 @@ for nome, expr in ALVOS.items():
         erros.append(f"alvo {nome} não está UP")
 resumo.append(f"| Sagas concluídas (`oficina_sagas_concluidas_total`) | {concluidas:g} |")
 
-# 4. Jaeger: servicos e um trace que atravessa os 3 servicos
-servicos_jaeger = get_json(f"{JAEGER}/api/services").get("data") or []
-resumo += ["", "## Jaeger: traces", "", f"Serviços com spans: {', '.join(sorted(servicos_jaeger))}", ""]
+# 4. Jaeger: servicos e um trace que atravessa os 3 servicos. Usa a API JSON /api/v3 (estavel no Jaeger v2) e,
+#    se ela nao existir, a API interna /api/* da UI. Os traces viram {traceId: [(servico, operacao, inicio_ns)]}.
+def get_jaeger(caminho, params=None):
+    url = f"{JAEGER}{caminho}" + ("?" + urllib.parse.urlencode(params) if params else "")
+    try:
+        return get_json(url)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise
+
+
+def traces_v3(servico):
+    agora = time.time()
+    formato = "%Y-%m-%dT%H:%M:%SZ"
+    inicio, fim_ = time.strftime(formato, time.gmtime(agora - 3600)), time.strftime(formato, time.gmtime(agora + 60))
+    # o gateway HTTP do Jaeger le os parametros em snake_case; a especificacao OpenAPI usa camelCase
+    for nomes in (("service_name", "start_time_min", "start_time_max", "search_depth"),
+                  ("serviceName", "startTimeMin", "startTimeMax", "searchDepth")):
+        params = {f"query.{n}": v for n, v in zip(nomes, (servico, inicio, fim_, "200"))}
+        try:
+            resposta = get_jaeger("/api/v3/traces", params)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 400:
+                continue
+            raise
+        traces = {}
+        for recurso in ((resposta or {}).get("result") or {}).get("resourceSpans", []):
+            atributos = {a["key"]: a["value"].get("stringValue") for a in recurso["resource"].get("attributes", [])}
+            nome = atributos.get("service.name", "?")
+            for escopo in recurso.get("scopeSpans", []):
+                for span in escopo.get("spans", []):
+                    traces.setdefault(span["traceId"], []).append(
+                        (nome, span["name"], int(span["startTimeUnixNano"])))
+        return traces
+    raise RuntimeError("a API /api/v3/traces recusou os parametros de busca")
+
+
+def traces_internos(servico):
+    resposta = get_jaeger("/api/traces", {"service": servico, "lookback": "1h", "limit": 200}) or {}
+    traces = {}
+    for trace in resposta.get("data") or []:
+        processos = trace["processes"]
+        traces[trace["traceID"]] = [
+            (processos[s["processID"]]["serviceName"], s["operationName"], s["startTime"] * 1000) for s in trace["spans"]]
+    return traces
+
+
+v3 = get_jaeger("/api/v3/services")
+if v3 is not None:
+    servicos_jaeger, buscar_traces, api_jaeger = v3.get("services") or [], traces_v3, "/api/v3"
+else:
+    interno = get_jaeger("/api/services") or {}
+    servicos_jaeger, buscar_traces, api_jaeger = interno.get("data") or [], traces_internos, "/api (interna)"
+resumo += ["", "## Jaeger: traces", "", f"API: `{api_jaeger}`. Serviços com spans: {', '.join(sorted(servicos_jaeger))}",
+           ""]
 for servico in SERVICOS:
     if servico not in servicos_jaeger:
         erros.append(f"serviço {servico} sem spans no Jaeger")
@@ -182,24 +235,22 @@ melhor = None
 for servico in SERVICOS:
     if servico not in servicos_jaeger:
         continue
-    url = f"{JAEGER}/api/traces?" + urllib.parse.urlencode({"service": servico, "lookback": "1h", "limit": 200})
-    for trace in get_json(url).get("data") or []:
-        nomes = {p["serviceName"] for p in trace["processes"].values()}
-        chave = (len(nomes & set(SERVICOS)), len(trace["spans"]))
+    for trace_id, spans in buscar_traces(servico).items():
+        nomes = {s[0] for s in spans}
+        chave = (len(nomes & set(SERVICOS)), len(spans))
         if melhor is None or chave > melhor[0]:
-            melhor = (chave, trace, nomes)
+            melhor = (chave, trace_id, spans, nomes)
 
 if melhor is None:
     erros.append("nenhum trace encontrado no Jaeger")
 else:
-    (_, total_spans), trace, nomes = melhor
-    processos = trace["processes"]
-    salvar("trace_jaeger.json", {"data": [trace]})
-    resumo.append(f"Trace com mais serviços: `{trace['traceID']}`, {total_spans} spans, serviços: "
-                  f"{', '.join(sorted(nomes))}")
+    _, trace_id, spans, nomes = melhor
+    spans = sorted(spans, key=lambda s: s[2])
+    salvar("trace_jaeger.json", {"traceID": trace_id, "servicos": sorted(nomes),
+                                 "spans": [{"servico": s[0], "operacao": s[1], "inicioNs": s[2]} for s in spans]})
+    resumo.append(f"Trace com mais serviços: `{trace_id}`, {len(spans)} spans, serviços: {', '.join(sorted(nomes))}")
     resumo += ["", "| Serviço | Operação |", "|---|---|"]
-    for span in sorted(trace["spans"], key=lambda s: s["startTime"])[:40]:
-        resumo.append(f"| {processos[span['processID']]['serviceName']} | {span['operationName']} |")
+    resumo += [f"| {s[0]} | {s[1]} |" for s in spans[:40]]
     if not set(SERVICOS) <= nomes:
         erros.append(f"nenhum trace atravessa os 3 serviços (o melhor tem {', '.join(sorted(nomes))})")
 
