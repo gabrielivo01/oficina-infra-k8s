@@ -1,3 +1,5 @@
+# /metrics/per-object: metricas por fila (label queue), usadas pelos paineis de filas/DLQ e pelo alerta de DLQ.
+# O /metrics padrao do rabbitmq_prometheus agrega tudo numa serie sem label de fila.
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -14,5 +16,5 @@ spec:
       app: rabbitmq
   endpoints:
     - port: prometheus
-      path: /metrics
+      path: /metrics/per-object
       interval: 30s

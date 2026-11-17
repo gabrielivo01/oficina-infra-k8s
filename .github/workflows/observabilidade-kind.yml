@@ -70,7 +70,7 @@ jobs:
           BILLING_DIR: ${{ github.workspace }}/oficina-billing-service
         run: |
           set -euo pipefail
-          owner="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
           export IMAGE_OFICINA="ghcr.io/${owner}/oficina:latest"
           export IMAGE_EXECUTION="ghcr.io/${owner}/oficina-execution-service:latest"
           export IMAGE_BILLING="ghcr.io/${owner}/oficina-billing-service:latest"

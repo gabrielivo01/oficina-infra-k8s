@@ -14,10 +14,15 @@ const DASHBOARDS = ["oficina-overview", "oficina-saga", "oficina-execution", "of
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const browser = await chromium.launch();
   try {
-    const grafana = await browser.newContext({
-      viewport: { width: 1600, height: 1000 },
-      httpCredentials: { username: process.env.GRAFANA_USUARIO, password: process.env.GRAFANA_SENHA },
+    const grafana = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
+    // A UI do Grafana redireciona para /login (Basic Auth so vale para a API): o POST /login grava o cookie de
+    // sessao no contexto do navegador.
+    const login = await grafana.request.post(`${GRAFANA}/login`, {
+      data: { user: process.env.GRAFANA_USUARIO, password: process.env.GRAFANA_SENHA },
     });
+    if (!login.ok()) {
+      throw new Error(`login no Grafana falhou: HTTP ${login.status()}`);
+    }
     const pagina = await grafana.newPage();
     for (const uid of DASHBOARDS) {
       await pagina.goto(`${GRAFANA}/d/${uid}?orgId=1&from=now-30m&to=now&kiosk`, { waitUntil: "networkidle" });
@@ -27,7 +32,7 @@ const DASHBOARDS = ["oficina-overview", "oficina-saga", "oficina-execution", "of
     }
 
     const trace = JSON.parse(fs.readFileSync(path.join(process.env.OUT_DIR, "trace_jaeger.json"), "utf8"));
-    const traceId = trace.data[0].traceID;
+    const traceId = trace.traceID;
     const jaeger = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
     await jaeger.goto(`${JAEGER}/trace/${traceId}`, { waitUntil: "networkidle" });
     await jaeger.waitForTimeout(3000);
