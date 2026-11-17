@@ -234,6 +234,20 @@ scripts/smoke_test_e2e.sh         # abre uma OS, faz diagnóstico/orçamento/exe
 O smoke test usa o gateway fake do Billing com `APP_PAGAMENTO_FAKE_STATUS_INICIAL=APROVADO` (definido pelo deploy)
 e os endpoints do mecânico no Execution; sem `OS_URL`/`EXECUTION_URL`/`BILLING_URL` ele abre port-forward sozinho.
 
+### Validação de traces e dashboards
+
+Depois do smoke test, `scripts/validar_observabilidade.sh` confere pelas APIs (port-forward próprio):
+
+- **Grafana:** os 4 dashboards (`oficina-overview`, `oficina-saga`, `oficina-execution`, `oficina-billing`) carregados
+  e cada painel com dados no Prometheus. Os painéis de falha (notificação, compensação) podem ficar vazios.
+- **Prometheus:** alvos dos 3 serviços e do RabbitMQ UP e `oficina_sagas_concluidas_total` ≥ 1.
+- **Jaeger:** os 3 serviços com spans e um trace que atravessa OS, Execution e Billing pelo RabbitMQ.
+
+As evidências ficam em `evidencias-observabilidade/` (`resumo.md`, resultados por painel e o trace em JSON; com
+`CAPTURAR_TELAS=true`, também telas dos dashboards e do trace, via Playwright). O workflow
+`.github/workflows/observabilidade-kind.yml` roda tudo num kind efêmero (manual ou em PR que altere a observabilidade)
+e publica as evidências como artifact, sem precisar subir a plataforma completa na máquina local.
+
 ### Validação dos arquivos
 
 ```bash
